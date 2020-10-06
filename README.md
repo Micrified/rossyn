@@ -17,7 +17,7 @@ ROSSYN, or the ROS Synthesizer, generates applications for ROS2. It has a partic
 
 ## Output(s)
 
-At this time only 
+At this time only textual output on STDOUT is available
 
 
 ## Notes

@@ -5,6 +5,9 @@ import (
 	"math/rand"
 	"math"
 	"time"
+	"bufio"
+	"os"
+	"log"
 )
 
 
@@ -40,6 +43,9 @@ type Node struct {
 	vertices  []*Vertex          // List of vertices belonging to the node
 }
 
+// Aliases a list of executors
+type Executors []*Executor
+
 // Holds nodes that belong to the same executing entity
 type Executor struct {
 	name      string             // Unique name belonging to executor 
@@ -50,6 +56,7 @@ type Executor struct {
 type Application struct {
 	name       string            // Name of the application
 	executors  []*Executor       // List of executors belonging to application
+	chains     Chains
 }
 
 // Enumeration type: Policies (various)
@@ -164,7 +171,7 @@ func make_chains (r Rules) Chains {
 */
 
 // Displays an executor on stdout
-func show_executors (es *[]*Executor) {
+func show_executors (es *Executors) {
 	for _, e := range (*es) {
 		fmt.Printf("%s {\n", (*e).name)
 		for _, n := range (*e).nodes {
@@ -182,8 +189,8 @@ func show_executors (es *[]*Executor) {
 }
 
 // Organizes and generates executors
-func make_executors (cs *Chains, setup Setup) []*Executor {
-	var executors []*Executor = make([]*Executor, setup.executor_count)
+func make_executors (cs *Chains, setup Setup) Executors {
+	var executors Executors = make([]*Executor, setup.executor_count)
 
 	// Setup executors (create a node for each chain)
 	for i := 0; i < setup.executor_count; i++ {
@@ -230,16 +237,114 @@ func make_executors (cs *Chains, setup Setup) []*Executor {
 	return executors
 }
 
+/*
+ *******************************************************************************
+ *                      Function Definitions: Generation                       *
+ *******************************************************************************
+*/
+
+func make_application (name string, cs *Chains, es *Executors) {
+	var indent_level int = 0
+
+	indent_str := func (lvl int) string {
+		s := ""
+		for lvl > 0 {
+			s = s + "\t"
+			lvl--
+		}
+		return s
+	}
+
+	// Create the output file
+	file, err := os.Create(name + "_app.xml")
+	if err != nil {
+		log.Fatalf("File create error: %s", err.Error())
+	}
+
+	// Create output writer
+	w := bufio.NewWriter(file)
+
+	// Defer file closure
+	defer file.Close()
+
+	// Write: Package open tag
+	w.WriteString(fmt.Sprintf("<package name=\"%s\">\n", name))
+
+	// TODO: Message type
+
+	// TODO: Dependencies
+
+	// For all executors
+	indent_level++
+	w.WriteString(fmt.Sprintf("%s<executors>\n", indent_str(indent_level)))
+	indent_level++
+	for i, e := range (*es) {
+		w.WriteString(fmt.Sprintf("%s<executor id=%d>\n", indent_str(indent_level), i))
+		indent_level++
+		for _, n := range (*e).nodes {
+			w.WriteString(fmt.Sprintf("%s<node name=%s>\n", indent_str(indent_level), (*n).name))
+			indent_level++
+
+			for _, v := range (*n).vertices {
+				w.WriteString(fmt.Sprintf("%s<callback>\n", indent_str(indent_level)))
+				indent_level++
+				w.WriteString(fmt.Sprintf("%s<name> %s </name>\n", indent_str(indent_level), (*v).name))
+				w.WriteString(fmt.Sprintf("%s<wcet> %d </wcet>\n", indent_str(indent_level), 1000))
+				if (*v).chain_off == 0 {
+					w.WriteString(fmt.Sprintf("%s<timer> 1000 </timer>\n", indent_str(indent_level)))
+				}
+				indent_level--
+				w.WriteString(fmt.Sprintf("%s</callback>\n", indent_str(indent_level)))
+			}
+
+			indent_level--
+			w.WriteString(fmt.Sprintf("%s</node>\n", indent_str(indent_level)))
+		}
+		indent_level--
+		w.WriteString(fmt.Sprintf("%s</executor>\n", indent_str(indent_level)))
+	}
+	indent_level--
+	w.WriteString(fmt.Sprintf("%s</executors>\n", indent_str(indent_level)))
+	indent_level--
+
+	// Write: Package close tag
+	w.WriteString(fmt.Sprintf("</package>\n"))
+
+	// Flush the buffer
+	w.Flush()
+}
+
+
 
 func main () {
+	reader := bufio.NewReader(os.Stdin)
+
+	// Make chain rules + chain
 	r := Rules{chain_count: 3, chain_mean_length: 6, chain_variance: 0.5, p_callback_merge: 0.2, p_callback_sync: 0.0}
 	cs := make_chains(r)
 	fmt.Printf("Done - showing ...\n")
 	show_chains(&cs)
 
+	// Make executors and node organization
 	fmt.Printf("Executors ...\n")
 	s := Setup{executor_count: 2, executor_policy: Complete, node_policy: Cluster}
 	es := make_executors(&cs, s)
-
 	show_executors(&es)
+
+	// Prompt for generating
+	fmt.Printf("Generate XML? (Y to proceed / any other key to cancel)\n")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatalf("Input error: %s", err.Error())
+	}
+	bytes := []byte(input)
+	if len(bytes) != 2 || (bytes[0] != 'y' && bytes[0] != 'Y') {
+		return
+	} else {
+		fmt.Printf("Generating ...\n")	
+	}
+
+	// Generate XML
+	make_application("example", &cs, &es)
+
 }
